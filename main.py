@@ -1,84 +1,82 @@
 import nltk
+nltk.download('punkt_tab')
+nltk.download('stopwords')
+nltk.download('vader_lexicon')
+import nltk
 from nltk.tokenize import word_tokenize
 from nltk.util import ngrams
-from nltk.stem import PorterStemmer
 from nltk.corpus import stopwords
 from collections import Counter
 from textblob import TextBlob
+! pip install PyPDF2
+from nltk.stem import PorterStemmer
+from nltk.sentiment import SentimentIntensityAnalyzer
 import PyPDF2
 import matplotlib.pyplot as plt
 import seaborn as sns
 import string
 import spacy
-from gensim.models import Word2Vec
-from sklearn.manifold import TSNE
-import numpy as np
-from mpl_toolkits.mplot3d import Axes3D
 
 # Load spaCy model for Named Entity Recognition
 nlp = spacy.load("en_core_web_sm")
 
-# Ensure required NLTK resources are downloaded
-nltk.download('punkt')
-nltk.download('stopwords')
+# Initialize the SentimentIntensityAnalyzer
+sia = SentimentIntensityAnalyzer()
 
-def visualize_word2vec(model):
-    """Visualize Word2Vec model using t-SNE for dimensionality reduction (3D)."""
-    words = list(model.wv.index_to_key)
-    word_vectors = [model.wv[word] for word in words]
+def plot_emotion_graph(sentiment_data, output_path):
+    """Plot emotion graph based on SentimentIntensityAnalyzer's polarity."""
+    paragraphs = [f'Paragraph {i+1}' for i in range(len(sentiment_data))]
+    positive_scores = [score['pos'] for score in sentiment_data]
+    neutral_scores = [score['neu'] for score in sentiment_data]
+    negative_scores = [score['neg'] for score in sentiment_data]
+    overall_score = [score['compound'] for score in sentiment_data]
 
-    # Convert word_vectors to a NumPy array
-    word_vectors = np.array(word_vectors)
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(x=paragraphs, y=positive_scores, label="Positive", color="g")
+    sns.lineplot(x=paragraphs, y=neutral_scores, label="Neutral", color="b")
+    sns.lineplot(x=paragraphs, y=negative_scores, label="Negative", color="r")
+    sns.lineplot(x=paragraphs, y=overall_score, label="Overall", color="orange")
 
-    # Determine a suitable perplexity value
-    perplexity = min(30, len(word_vectors) - 1)  # Default perplexity is 30, but it must be less than the number of words
-
-    # Reduce dimensions using t-SNE
-    tsne = TSNE(n_components=3, perplexity=perplexity, random_state=42)
-    reduced_vectors = tsne.fit_transform(word_vectors)
-
-    # Plotting the words in 3D space
-    fig = plt.figure(figsize=(12, 8))
-    ax = fig.add_subplot(111, projection='3d')
-
-    ax.scatter(reduced_vectors[:, 0], reduced_vectors[:, 1], reduced_vectors[:, 2], c='b', marker='o', alpha=0.6)
-
-    for i, word in enumerate(words):
-        ax.text(reduced_vectors[i, 0], reduced_vectors[i, 1], reduced_vectors[i, 2], word,
-                color='orange', fontsize=10, alpha=0.7)
-
-    ax.set_title('Word2Vec Word Embeddings Visualization (3D)')
-    ax.set_xlabel('t-SNE Dimension 1')
-    ax.set_ylabel('t-SNE Dimension 2')
-    ax.set_zlabel('t-SNE Dimension 3')
-
+    plt.title("Emotion Scores by Paragraph")
+    plt.xlabel("Paragraphs")
+    plt.ylabel("Emotion Score")
+    plt.xticks(rotation=45, ha='right')
+    plt.legend()
     plt.tight_layout()
-    plt.savefig('./Graphs/word2vec_3d_visualization.png')
-    plt.show()
+    plt.savefig(output_path)
+    plt.close()
+
+def plot_ngram_graph(ngram_freq, output_path):
+    """Plot n-gram frequencies."""
+    ngram, counts = zip(*ngram_freq.most_common(10))
+    ngram_labels = [' '.join(gram) for gram in ngram]
+
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x=ngram_labels, y=counts, palette="Blues_d")
+
+    plt.title("Top 10 Most Frequent N-grams")
+    plt.xlabel("N-grams")
+    plt.ylabel("Frequency")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
 
 
-def train_word2vec_model(text):
-    """Train a Word2Vec model using the input text."""
+def ngram_analysis(text, n=2):
+    """Generate n-grams and return their frequencies."""
     words = word_tokenize(text.lower())
     stop_words = set(stopwords.words('english'))
     filtered_words = [word for word in words if word.isalpha() and word not in stop_words]
-    
-    # Train Word2Vec model
-    model = Word2Vec([filtered_words], min_count=1, vector_size=100, window=5, sg=0)
-    return model
 
-def extract_text_from_pdf(pdf_path):
-    """Extract text from a PDF file."""
-    with open(pdf_path, 'rb') as file:
-        reader = PyPDF2.PdfReader(file)
-        text = ''.join(page.extract_text() for page in reader.pages)
-    return text, reader.pages
+    n_grams = ngrams(filtered_words, n)
+    return Counter(n_grams)
 
 def preprocess_text(text):
     """Preprocess text: tokenize, remove stopwords, stem, and correct spelling."""
     text = text.lower()
     words = word_tokenize(text)
-    
+
     stop_words = set(stopwords.words('english'))
     filtered_words = [word for word in words if word.isalpha() and word not in stop_words]
     filtered_words = [word for word in filtered_words if word not in string.punctuation]
@@ -90,90 +88,89 @@ def preprocess_text(text):
     # Stemming
     ps = PorterStemmer()
     stemmed_words = [ps.stem(word) for word in corrected_words]
-    
+
     # Named Entity Recognition (optional)
     doc = nlp(" ".join(stemmed_words))
     entities = [(ent.text, ent.label_) for ent in doc.ents]
-    
+
     return " ".join(stemmed_words), entities
 
-def ngram_analysis(text, n=2):
-    """Generate n-grams and return their frequencies."""
-    words = word_tokenize(text.lower())
-    stop_words = set(stopwords.words('english'))
-    filtered_words = [word for word in words if word.isalpha() and word not in stop_words]
-    
-    n_grams = ngrams(filtered_words, n)
-    return Counter(n_grams)
-
-def sentiment_analysis(text):
-    """Perform sentiment analysis on different sections of the text (beginning, middle, end)."""
-    total_length = len(text)
-    sections = {
-        "Beginning": text[:total_length // 3],
-        "Middle": text[total_length // 3: 2 * total_length // 3],
-        "End": text[2 * total_length // 3:]
-    }
-
-    sentiments = {section: TextBlob(content).sentiment.polarity for section, content in sections.items()}
-    return sentiments
-
-def plot_combined_sentiment_and_ngram(sentiment_data, ngram_freq, output_path):
-    """Plot sentiment analysis scores and annotate with most frequent n-grams."""
-    sections = [section for page in sentiment_data for section in page.keys()]
-    sentiment_scores = [score for page in sentiment_data for score in page.values()]
-    
-    ngram, counts = zip(*ngram_freq.most_common(10))
-    ngram_labels = [' '.join(gram) for gram in ngram]
-    
-    plt.figure(figsize=(10, 6))
-
-    # Line graph for sentiment scores
-    sns.lineplot(x=sections, y=sentiment_scores, marker="o", label="Sentiment Scores", color="b")
-
-    for i, ngram_label in enumerate(ngram_labels):
-        plt.text(i, sentiment_scores[i] + 0.05, ngram_label, fontsize=10, ha='center', va='bottom', color="orange")
-    
-    plt.title("Combined Sentiment Scores and N-gram Annotations")
-    plt.xlabel("Story Sections")
-    plt.ylabel("Sentiment Score")
-    plt.ylim(-1, 1)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-    plt.savefig(output_path)
-    plt.close()
+def extract_text_from_pdf(pdf_path):
+    """Extract text from a PDF file."""
+    with open(pdf_path, 'rb') as file:
+        reader = PyPDF2.PdfReader(file)
+        text = ''.join(page.extract_text() for page in reader.pages)
+    return text, reader.pages
 
 def analyze_story(pdf_path):
     """Main function to analyze the story from the PDF, including text extraction, sentiment analysis, and Word2Vec visualization."""
     text, pages = extract_text_from_pdf(pdf_path)
-    
+
     sentiment_data = []
+    ngram_sentiment_data = []
     all_ngram_freq = Counter()
+    ngram = 2
 
     for i, page in enumerate(pages):
         page_text = page.extract_text()
         preprocessed_text, entities = preprocess_text(page_text)
-        
+
         # N-gram Analysis (Bigrams)
         ngram_freq = ngram_analysis(preprocessed_text, n=2)
         all_ngram_freq.update(ngram_freq)
-        
-        # Sentiment Analysis
-        sentiments = sentiment_analysis(page_text)
-        sentiment_data.append(sentiments)
 
-        # Train Word2Vec model on the page's text
-        model = train_word2vec_model(page_text)
-        print(f"Word2Vec Vocab (Page {i + 1}): {list(model.wv.index_to_key)}")
-        visualize_word2vec(model)
-    
-    # Plot sentiment and n-grams
-    plot_combined_sentiment_and_ngram(sentiment_data, all_ngram_freq, "./Graphs/combined_sentiment_ngram.png")
-    
+        # Sentiment Analysis by Paragraph using SentimentIntensityAnalyzer
+        paragraphs = page_text.split("\n\n")  # Split by paragraphs
+        for paragraph in paragraphs:
+            sentiment = sia.polarity_scores(paragraph)
+            sentiment_data.append(sentiment)
+
+            # Sentiment analysis using n-grams
+            ngram_sentiment = analyze_ngram_sentiment(paragraph, n = ngram)
+            ngram_sentiment_data.append(ngram_sentiment)
+
+
+    # Plot sentiment graph
+    plot_emotion_graph(sentiment_data, "/content/emotion_graph.png")
+
+    plot_emotion_graph(ngram_sentiment_data, "/content/ngram_emotion_graph.png")
+
+    # Plot n-gram graph
+    plot_ngram_graph(all_ngram_freq, "/content/ngram_graph.png")
+
+
     # Print some results for the entire document
-    print(f"All Sentiment Scores (Beginning, Middle, End): {sentiment_data}")
     print(f"Top 10 Most Common N-grams: {all_ngram_freq.most_common(10)}")
 
-if __name__ == "__main__":
-    pdf_path = "text/The Masque of the Red Death author Edgar Allan Poe.pdf"
-    analyze_story(pdf_path)
+
+def analyze_ngram_sentiment(paragraph, n = 2):
+    """Analyze sentiment using n-grams for each paragraph."""
+    ngram_sentiment = {'pos': 0, 'neu': 0, 'neg': 0, 'compound': 0}
+
+    # Tokenize and preprocess the paragraph
+    words = word_tokenize(paragraph.lower())
+    stop_words = set(stopwords.words('english'))
+    filtered_words = [word for word in words if word.isalpha() and word not in stop_words]
+
+    # Generate n-grams (bigrams)
+    n_grams = ngrams(filtered_words, n)
+
+    # Analyze sentiment for each n-gram
+    for ngram in n_grams:
+        ngram_text = " ".join(ngram)
+        sentiment = sia.polarity_scores(ngram_text)
+        ngram_sentiment['pos'] += sentiment['pos']
+        ngram_sentiment['neu'] += sentiment['neu']
+        ngram_sentiment['neg'] += sentiment['neg']
+        ngram_sentiment['compound'] += sentiment['compound']
+
+    # Normalize sentiment scores by number of n-grams
+    ngram_count = len(filtered_words) - 1  # Number of bigrams in the paragraph
+    if ngram_count > 0:
+        ngram_sentiment = {k: v / ngram_count for k, v in ngram_sentiment.items()}
+
+    return ngram_sentiment
+
+# Path to the PDF file in Google Colab (you need to upload the file manually)
+pdf_path = "/content/02. Jack and the Beanstalk Author Joseph Jacobs.pdf"  # Make sure to upload the file to /content folder
+analyze_story(pdf_path)
